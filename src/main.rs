@@ -332,15 +332,14 @@ fn setup(mut commands: Commands,
 
     window.resolution.set(1280.0, 720.0);
     window.resizable = false;
-    window.name = Some(String::from("Thor's Power"));
-    window.title = String::from("Thor's Power");
+    window.name = Some(String::from("Whack-a-key"));
+    window.title = String::from("Whack-a-key");
 
     commands.spawn(Camera2d::default());
     
     // Game BG
     commands.spawn(Sprite::from_image(asset_server.load("GameBG.png")));
     
-
     // Create moles
     create_all_moles(&mut commands, &mut texture_atlas_layouts, &asset_server);
 
