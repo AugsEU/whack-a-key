@@ -1,0 +1,12 @@
+Power:
+    Electricity
+        Subway surfers as a bolt of electricity travelling through power line.
+    Strength (avoid)
+        Strength test machine (typing game)
+
+    Political Power
+    Maths (2^3)
+    Horse Power
+
+Use whole keyboard to control character.
+    Whack a mole
