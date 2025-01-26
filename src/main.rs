@@ -75,13 +75,16 @@ impl Default for GameManager
     }
 }
 
-fn update_gamemanager(time: Res<Time>, mut manager: ResMut<GameManager>)
+fn update_gamemanager(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut manager: ResMut<GameManager>)
 {
     match manager.curr_state 
     {
         GameState::Begin =>
         {
-
+            if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space)
+            {
+                manager.start_round();
+            }
         }
         GameState::Round =>
         {
@@ -89,7 +92,10 @@ fn update_gamemanager(time: Res<Time>, mut manager: ResMut<GameManager>)
         }
         GameState::GameOver =>
         {
-
+            if keys.just_pressed(KeyCode::Enter)
+            {
+                manager.curr_state = GameState::Begin;
+            }
         }
     }
 }
@@ -99,18 +105,24 @@ struct Healthbar;
 
 fn update_healthbar(game_manager: Res<GameManager>,
             mut healthbar: Query<(&mut Healthbar, &mut Children)>, 
-            mut hb_sprites: Query<&mut Sprite>)
+            mut hb_sprites: Query<(&mut Sprite, &mut Visibility)>,
+            mut hb_title: Query<&mut Text2d>)
 {
     for (mut healthbar, mut children) in &mut healthbar
     {
         for (i, child) in children.iter().enumerate()
         {
-            if let Ok(mut sprite) = hb_sprites.get_mut(*child)
+            if let Ok(mut hb_sprite) = hb_sprites.get_mut(*child)
             {
-                println!("AAA");
-                if let Some(atlas) = &mut sprite.texture_atlas
+                let (mut sprite, mut vis) = hb_sprite;
+                if game_manager.curr_state != GameState::Round
                 {
-                    let alive : bool = (i as i32) < game_manager.get_curr_health();
+                    *vis = Visibility::Hidden;
+                }
+                else if let Some(atlas) = &mut sprite.texture_atlas
+                {
+                    *vis = Visibility::Visible;
+                    let alive : bool = (i as i32) <= game_manager.get_curr_health();
                     atlas.index = if alive { 0 } else { 1 };
                 }
                 else
@@ -118,9 +130,73 @@ fn update_healthbar(game_manager: Res<GameManager>,
                     panic!();
                 }
             }
+            else if let Ok(mut hb_title) = hb_title.get_mut(*child)
+            {
+                if game_manager.curr_state == GameState::Begin
+                {
+                    *hb_title = Text2d::new("WHACK-A-KEY\nPress [Enter]");
+                }
+                else if game_manager.curr_state == GameState::Round
+                {
+                    let score_str = format!("Score: {}\n\n ", game_manager.moles_hit);
+                    *hb_title = Text2d::new(score_str);
+                }
+                else if game_manager.curr_state == GameState::GameOver
+                {
+                    let score_str = format!("GAME OVER\n Score: {}", game_manager.moles_hit);
+                    *hb_title = Text2d::new(score_str);
+                }
+            }
         }
     }
 }
+
+#[derive(Resource, Clone)]
+struct ScreenShaker
+{
+    shake_timer: Timer,
+}
+
+impl ScreenShaker
+{
+    fn shake_for(&mut self, time: f32)
+    {
+        self.shake_timer = Timer::from_seconds(time, TimerMode::Once);
+    }
+
+    fn get_delta(&self) -> Vec2
+    {
+        if self.shake_timer.finished()
+        {
+            return Vec2::ZERO;
+        }
+
+        let t = self.shake_timer.elapsed_secs() / self.shake_timer.duration().as_secs_f32();
+        let a = 4.0 * (1.0 - t);
+
+        return Vec2::new(f32::sin(t * 203.0), f32::cos(t * 107.0)) * a;
+    }
+}
+
+impl Default for ScreenShaker
+{
+    fn default() -> Self
+    {
+        Self { shake_timer: Timer::from_seconds(0.0, TimerMode::Once) }
+    }
+}
+
+fn handle_shake(time: Res<Time>, mut shaker: ResMut<ScreenShaker>, mut query: Query<(&mut Camera2d, &mut Transform)>)
+{
+    let delta = shaker.get_delta();
+    shaker.shake_timer.tick(time.delta());
+
+    for (mut cam, mut trans) in &mut query
+    {
+        trans.translation = Vec3::new(delta.x, delta.y, 0.0);
+    }
+}
+
 
 // =============================================
 // ANIMATION
@@ -243,6 +319,7 @@ fn animate_sprite(time: Res<Time>, mut query: Query<(&mut SpriteAnimator, &mut S
 const MOLE_HIDE_ANIM: &str = "MoleHide";
 const MOLE_RISE_ANIM: &str = "MoleUp";
 const MOLE_BONK_ANIM: &str = "MoleBonk";
+const MOLE_NOPE_ANIM: &str = "MoleNope";
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum MoleState
@@ -293,6 +370,7 @@ impl Mole
 fn update_moles(time: Res<Time>, 
     keys: Res<ButtonInput<KeyCode>>,
     mut manager: ResMut<GameManager>,
+    mut shaker: ResMut<ScreenShaker>,
     mut query: Query<(&mut SpriteAnimator, &mut Mole)>)
 {
     if manager.curr_state != GameState::Round
@@ -320,6 +398,10 @@ fn update_moles(time: Res<Time>,
             else if mole.status == MoleState::Hidden
             {
                 manager.moles_missed += 1;
+                shaker.shake_for(0.4);
+                animator.play_anim(MOLE_NOPE_ANIM);
+
+                mole.reset_mole_time();
             }
         }
         else if mole.timer.just_finished()
@@ -343,6 +425,7 @@ fn update_moles(time: Res<Time>,
         if prev_state == MoleState::HeadUp && mole.status == MoleState::Hidden
         { 
             manager.moles_missed += 1;
+            shaker.shake_for(0.1);
         }
 
         if prev_state != mole.status && prev_state != MoleState::Bonked
@@ -383,6 +466,7 @@ fn main()
 
         // Startup
         .init_resource::<GameManager>()
+        .init_resource::<ScreenShaker>()
         .add_systems(Startup, 
             setup)
         
@@ -391,7 +475,8 @@ fn main()
             (update_gamemanager,
                     animate_sprite,
                     update_healthbar,
-                    update_moles))
+                    update_moles,
+                    handle_shake))
 
         .run();
 }
@@ -415,7 +500,7 @@ fn setup(mut commands: Commands,
     window.name = Some(String::from("Whack-a-key"));
     window.title = String::from("Whack-a-key");
 
-    commands.spawn(Camera2d::default());
+    commands.spawn((Camera2d::default(), Transform::default()));
     
     // Game BG
     commands.spawn(Sprite::from_image(asset_server.load("GameBG.png")));
@@ -424,11 +509,25 @@ fn setup(mut commands: Commands,
     create_all_moles(&mut commands, &mut texture_atlas_layouts, &asset_server);
 
     // Create healthbar
+    let font = asset_server.load("Pixica-Bold.ttf");
+    let text_font = TextFont {
+        font: font.clone(),
+        font_size: 64.0,
+        ..default()
+    };
+
     let hearts_tex = asset_server.load("Hearts.png");
     let hearts_layout = TextureAtlasLayout::from_grid(UVec2::new(22, 16), 2, 1, Some(UVec2::new(1, 1)), None);
     let hearts_atlas_layout = texture_atlas_layouts.add(hearts_layout);
 
-    let hb = commands.spawn((Healthbar, Transform::from_xyz(0.0, 260.0, 1.0))).id();
+    let hb = commands.spawn((Healthbar, Transform::from_xyz(0.0, 260.0, 1.0)))
+        .with_child((
+            Text2d::new("MY GAME!"),
+            text_font
+                .clone()
+                .with_font_smoothing(FontSmoothing::None),
+                Transform::from_xyz(0.0, 0.0, 1.0)))
+        .id();
 
     for i in 0..MAX_MISTAKES
     {
@@ -441,13 +540,12 @@ fn setup(mut commands: Commands,
             TextureAtlas {
                 layout: hearts_atlas_layout.clone(),
                 index: 0,
-            },
-        ))).id();
+                }),
+            Visibility::Visible,
+            )).id();
 
         commands.entity(hb).add_child(child);
     }
-
-    game_manager.start_round();
 }
 
 fn create_all_moles(commands: &mut Commands, texture_atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>, asset_server: &Res<AssetServer>)
@@ -508,6 +606,7 @@ fn create_mole_at(commands: &mut Commands, mut pos: Vec2, key: KeyCode, texture:
     anim_controller.push_anim(MOLE_RISE_ANIM, SpriteAnimation::new( &vec![4,3,1,0], 0.08));
     anim_controller.push_anim(MOLE_HIDE_ANIM, SpriteAnimation::new( &vec![0,1,3,4], 0.04));
     anim_controller.push_anim(MOLE_BONK_ANIM, SpriteAnimation::new( &vec![2,4,2,4,2,4,2,4], 0.05));
+    anim_controller.push_anim(MOLE_NOPE_ANIM, SpriteAnimation::new( &vec![5,4], 0.2));
 
     anim_controller.play_anim(MOLE_HIDE_ANIM);
 
