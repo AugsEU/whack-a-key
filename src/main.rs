@@ -5,6 +5,8 @@
 #![allow(unused_imports)]
 #![allow(unused_import_braces)]
 
+use std::char::MAX;
+use std::cmp;
 use std::{collections::HashMap, time::Duration};
 use bevy::prelude::*;
 use bevy::text::FontSmoothing;
@@ -14,6 +16,8 @@ use rand::Rng;
 // =============================================
 // GAMESTATE
 // =============================================
+const MAX_MISTAKES : i32 = 10;
+
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 enum GameState
 {
@@ -26,7 +30,9 @@ enum GameState
 struct GameManager
 {
     time_since_round_start : Stopwatch,
-    curr_state: GameState
+    curr_state: GameState,
+    moles_hit: i32,
+    moles_missed: i32,
 }
 
 impl GameManager
@@ -36,7 +42,9 @@ impl GameManager
         Self
         {
             time_since_round_start: Stopwatch::new(),
-            curr_state: GameState::Begin
+            curr_state: GameState::Begin,
+            moles_hit: 0,
+            moles_missed: 0
         }
     }
 
@@ -44,6 +52,18 @@ impl GameManager
     {
         self.curr_state = GameState::Round;
         self.time_since_round_start.reset();
+        self.moles_hit = 0;
+        self.moles_missed = 0;
+    }
+
+    fn game_over(&mut self)
+    {
+        self.curr_state = GameState::GameOver;
+    }
+
+    fn get_curr_health(&self) -> i32
+    {
+        return cmp::max(0, MAX_MISTAKES - self.moles_missed);
     }
 }
 
@@ -72,9 +92,35 @@ fn update_gamemanager(time: Res<Time>, mut manager: ResMut<GameManager>)
 
         }
     }
-    
 }
 
+#[derive(Component)]
+struct Healthbar;
+
+fn update_healthbar(game_manager: Res<GameManager>,
+            mut healthbar: Query<(&mut Healthbar, &mut Children)>, 
+            mut hb_sprites: Query<&mut Sprite>)
+{
+    for (mut healthbar, mut children) in &mut healthbar
+    {
+        for (i, child) in children.iter().enumerate()
+        {
+            if let Ok(mut sprite) = hb_sprites.get_mut(*child)
+            {
+                println!("AAA");
+                if let Some(atlas) = &mut sprite.texture_atlas
+                {
+                    let alive : bool = (i as i32) < game_manager.get_curr_health();
+                    atlas.index = if alive { 0 } else { 1 };
+                }
+                else
+                {
+                    panic!();
+                }
+            }
+        }
+    }
+}
 
 // =============================================
 // ANIMATION
@@ -246,9 +292,14 @@ impl Mole
 
 fn update_moles(time: Res<Time>, 
     keys: Res<ButtonInput<KeyCode>>,
-    manager: Res<GameManager>,
+    mut manager: ResMut<GameManager>,
     mut query: Query<(&mut SpriteAnimator, &mut Mole)>)
 {
+    if manager.curr_state != GameState::Round
+    {
+        return;
+    }
+
     let elapsed_sec = manager.time_since_round_start.elapsed_secs();
     let max_mole_up = (1.0 - (1.0 / (1.0 + elapsed_sec * 0.01))) * 18.0;
     let total_mole_up = query.iter().filter(|(a, m)| m.status == MoleState::HeadUp).count() as f32;
@@ -258,10 +309,18 @@ fn update_moles(time: Res<Time>,
         mole.timer.tick(time.delta());
         let prev_state = mole.status;
 
-        if keys.just_pressed(mole.kill_key) && mole.status == MoleState::HeadUp
+        if keys.just_pressed(mole.kill_key) 
         {
-            animator.play_anim(MOLE_BONK_ANIM);
-            mole.status = MoleState::Bonked;
+            if mole.status == MoleState::HeadUp
+            {
+                animator.play_anim(MOLE_BONK_ANIM);
+                mole.status = MoleState::Bonked;
+                manager.moles_hit += 1;
+            }
+            else if mole.status == MoleState::Hidden
+            {
+                manager.moles_missed += 1;
+            }
         }
         else if mole.timer.just_finished()
         {
@@ -281,6 +340,11 @@ fn update_moles(time: Res<Time>,
             mole.timer.set_duration(Duration::from_secs_f32(new_dur.as_secs_f32() * diff_factor));
         }
 
+        if prev_state == MoleState::HeadUp && mole.status == MoleState::Hidden
+        { 
+            manager.moles_missed += 1;
+        }
+
         if prev_state != mole.status && prev_state != MoleState::Bonked
         {
             match mole.status 
@@ -288,6 +352,21 @@ fn update_moles(time: Res<Time>,
                 MoleState::HeadUp => animator.play_anim(MOLE_RISE_ANIM),
                 MoleState::Hidden => animator.play_anim(MOLE_HIDE_ANIM),
                 MoleState::Bonked => animator.play_anim(MOLE_BONK_ANIM),
+            }
+        }
+    }
+
+    println!("Score: {} | HP: {}", manager.moles_hit, manager.get_curr_health());
+
+    if manager.get_curr_health() == 0
+    {
+        manager.game_over();
+        for (mut animator, mut mole) in &mut query
+        {
+            if mole.status == MoleState::HeadUp
+            {
+                mole.status = MoleState::Hidden;
+                animator.play_anim(MOLE_HIDE_ANIM);
             }
         }
     }
@@ -311,6 +390,7 @@ fn main()
         .add_systems(Update, 
             (update_gamemanager,
                     animate_sprite,
+                    update_healthbar,
                     update_moles))
 
         .run();
@@ -342,6 +422,30 @@ fn setup(mut commands: Commands,
     
     // Create moles
     create_all_moles(&mut commands, &mut texture_atlas_layouts, &asset_server);
+
+    // Create healthbar
+    let hearts_tex = asset_server.load("Hearts.png");
+    let hearts_layout = TextureAtlasLayout::from_grid(UVec2::new(22, 16), 2, 1, Some(UVec2::new(1, 1)), None);
+    let hearts_atlas_layout = texture_atlas_layouts.add(hearts_layout);
+
+    let hb = commands.spawn((Healthbar, Transform::from_xyz(0.0, 260.0, 1.0))).id();
+
+    for i in 0..MAX_MISTAKES
+    {
+        let mut transform = Transform::from_xyz(i as f32 * 50.0 - 225.0, 0.0, 1.0);
+        transform.scale = Vec3::splat(2.0);
+        let child = commands.spawn((
+            transform,
+            Sprite::from_atlas_image(
+                hearts_tex.clone(),
+            TextureAtlas {
+                layout: hearts_atlas_layout.clone(),
+                index: 0,
+            },
+        ))).id();
+
+        commands.entity(hb).add_child(child);
+    }
 
     game_manager.start_round();
 }
@@ -430,7 +534,6 @@ fn create_mole_at(commands: &mut Commands, mut pos: Vec2, key: KeyCode, texture:
         Transform::from_translation(font_pos),
         TextColor(Color::linear_rgb(0.1, 0.1, 0.1))
     ));
-
 }
 
 /// The sprite is animated by changing its translation depending on the time that has passed since
