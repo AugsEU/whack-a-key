@@ -33,6 +33,10 @@ struct GameManager
     curr_state: GameState,
     moles_hit: i32,
     moles_missed: i32,
+    music_handle: Handle<AudioSource>,
+    bonk_handle: Handle<AudioSource>,
+    nope_handle: Handle<AudioSource>,
+    gameover_handle: Handle<AudioSource>,
 }
 
 impl GameManager
@@ -44,7 +48,11 @@ impl GameManager
             time_since_round_start: Stopwatch::new(),
             curr_state: GameState::Begin,
             moles_hit: 0,
-            moles_missed: 0
+            moles_missed: 0,
+            music_handle: Handle::default(),
+            bonk_handle: Handle::default(),
+            nope_handle: Handle::default(),
+            gameover_handle: Handle::default()
         }
     }
 
@@ -75,7 +83,8 @@ impl Default for GameManager
     }
 }
 
-fn update_gamemanager(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut manager: ResMut<GameManager>)
+fn update_gamemanager(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut manager: ResMut<GameManager>,
+    mut moles: Query<(&mut SpriteAnimator, &mut Mole)>)
 {
     match manager.curr_state 
     {
@@ -84,6 +93,12 @@ fn update_gamemanager(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut mana
             if keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::Space)
             {
                 manager.start_round();
+
+                for (mut mole_sprite, mut mole) in &mut moles
+                {
+                    mole.status = MoleState::Hidden;
+                    mole_sprite.play_anim(MOLE_HIDE_ANIM);
+                }
             }
         }
         GameState::Round =>
@@ -344,7 +359,7 @@ impl Mole
         let mut new_mole = Self
         {
             kill_key: key,
-            status: MoleState::Hidden,
+            status: MoleState::HeadUp,
             timer: Timer::new(Duration::from_secs(1), TimerMode::Repeating)
         };
 
@@ -359,7 +374,7 @@ impl Mole
         let duration = match self.status
         {
             MoleState::Hidden => rng.gen_range(4.0 .. 14.0),
-            MoleState::HeadUp => rng.gen_range(2.0 .. 3.0),
+            MoleState::HeadUp => rng.gen_range(3.0 .. 4.0),
             MoleState::Bonked => rng.gen_range(1.0 .. 2.0),
         };
 
@@ -367,7 +382,8 @@ impl Mole
     }
 }
 
-fn update_moles(time: Res<Time>, 
+fn update_moles(mut commands: Commands,
+    time: Res<Time>, 
     keys: Res<ButtonInput<KeyCode>>,
     mut manager: ResMut<GameManager>,
     mut shaker: ResMut<ScreenShaker>,
@@ -385,15 +401,29 @@ fn update_moles(time: Res<Time>,
     for (mut animator, mut mole) in &mut query
     {
         mole.timer.tick(time.delta());
-        let prev_state = mole.status;
+        let mut prev_state = mole.status;
 
-        if keys.just_pressed(mole.kill_key) 
+        if elapsed_sec < 1.5
+        {
+            mole.status = MoleState::Hidden;
+            prev_state = MoleState::Hidden;
+        }
+        else if keys.just_pressed(mole.kill_key) 
         {
             if mole.status == MoleState::HeadUp
             {
                 animator.play_anim(MOLE_BONK_ANIM);
                 mole.status = MoleState::Bonked;
                 manager.moles_hit += 1;
+
+                commands.spawn((
+                    AudioPlayer(manager.bonk_handle.clone()),
+                    PlaybackSettings {
+                        mode: bevy::audio::PlaybackMode::Once,
+                        volume: bevy::audio::Volume::new(0.2),
+                        ..default()
+                    }
+                ));
             }
             else if mole.status == MoleState::Hidden
             {
@@ -402,6 +432,15 @@ fn update_moles(time: Res<Time>,
                 animator.play_anim(MOLE_NOPE_ANIM);
 
                 mole.reset_mole_time();
+
+                commands.spawn((
+                    AudioPlayer(manager.nope_handle.clone()),
+                    PlaybackSettings {
+                        mode: bevy::audio::PlaybackMode::Once,
+                        volume: bevy::audio::Volume::new(0.2),
+                        ..default()
+                    }
+                ));
             }
         }
         else if mole.timer.just_finished()
@@ -418,11 +457,11 @@ fn update_moles(time: Res<Time>,
 
             // Adjust time to make game increasingly difficult.
             let new_dur = mole.timer.duration();
-            let diff_factor = 1.0 / (elapsed_sec * 0.02 + 2.0) + 0.5;
+            let diff_factor = 1.0 / (elapsed_sec * 0.01 + 2.0) + 0.5;
             mole.timer.set_duration(Duration::from_secs_f32(new_dur.as_secs_f32() * diff_factor));
         }
 
-        if prev_state == MoleState::HeadUp && mole.status == MoleState::Hidden
+        if prev_state == MoleState::HeadUp && mole.status == MoleState::Hidden && elapsed_sec > 1.0
         { 
             manager.moles_missed += 1;
             shaker.shake_for(0.1);
@@ -439,18 +478,13 @@ fn update_moles(time: Res<Time>,
         }
     }
 
-    println!("Score: {} | HP: {}", manager.moles_hit, manager.get_curr_health());
-
     if manager.get_curr_health() == 0
     {
         manager.game_over();
         for (mut animator, mut mole) in &mut query
         {
-            if mole.status == MoleState::HeadUp
-            {
-                mole.status = MoleState::Hidden;
-                animator.play_anim(MOLE_HIDE_ANIM);
-            }
+            mole.status = MoleState::HeadUp;
+            animator.play_anim(MOLE_RISE_ANIM);
         }
     }
 }
@@ -522,7 +556,7 @@ fn setup(mut commands: Commands,
 
     let hb = commands.spawn((Healthbar, Transform::from_xyz(0.0, 260.0, 1.0)))
         .with_child((
-            Text2d::new("MY GAME!"),
+            Text2d::new("WHACK-A-KEY"),
             text_font
                 .clone()
                 .with_font_smoothing(FontSmoothing::None),
@@ -546,6 +580,22 @@ fn setup(mut commands: Commands,
 
         commands.entity(hb).add_child(child);
     }
+
+    // Load sounds
+    game_manager.music_handle = asset_server.load("MontyMoles.wav");
+    game_manager.bonk_handle = asset_server.load("Bonk.wav");
+    game_manager.nope_handle = asset_server.load("Nope.wav");
+    game_manager.gameover_handle = asset_server.load("GameOver.wav");
+
+    commands.spawn((
+        AudioPlayer(game_manager.music_handle.clone()),
+        PlaybackSettings {
+            mode: bevy::audio::PlaybackMode::Loop,
+            volume: bevy::audio::Volume::new(0.2),
+            ..default()
+        }
+    ));
+
 }
 
 fn create_all_moles(commands: &mut Commands, texture_atlas_layouts: &mut ResMut<Assets<TextureAtlasLayout>>, asset_server: &Res<AssetServer>)
@@ -608,7 +658,7 @@ fn create_mole_at(commands: &mut Commands, mut pos: Vec2, key: KeyCode, texture:
     anim_controller.push_anim(MOLE_BONK_ANIM, SpriteAnimation::new( &vec![2,4,2,4,2,4,2,4], 0.05));
     anim_controller.push_anim(MOLE_NOPE_ANIM, SpriteAnimation::new( &vec![5,4], 0.2));
 
-    anim_controller.play_anim(MOLE_HIDE_ANIM);
+    anim_controller.play_anim(MOLE_RISE_ANIM);
 
     commands.spawn((
         Sprite::from_atlas_image(
@@ -634,44 +684,6 @@ fn create_mole_at(commands: &mut Commands, mut pos: Vec2, key: KeyCode, texture:
         TextColor(Color::linear_rgb(0.1, 0.1, 0.1))
     ));
 }
-
-/// The sprite is animated by changing its translation depending on the time that has passed since
-/// the last frame.
-// fn sprite_movement(time: Res<Time>, 
-//     keys: Res<ButtonInput<KeyCode>>,
-//     mut sprite_position: Query<(&mut Direction, &mut Transform)>)
-// {
-//     for (mut logo, mut transform) in &mut sprite_position
-//     {
-//         match *logo
-//         {
-//             Direction::Up => transform.translation.y += 150. * time.delta_secs(),
-//             Direction::Down => transform.translation.y -= 150. * time.delta_secs(),
-//             Direction::Left => transform.translation.x -= 150. * time.delta_secs(),
-//             Direction::Right => transform.translation.x += 150. * time.delta_secs(),
-//             Direction::None => {},
-//         }
-
-//         *logo = Direction::None;
-
-//         if keys.pressed(KeyCode::ArrowUp) 
-//         {
-//             *logo = Direction::Up;
-//         } 
-//         else if keys.pressed(KeyCode::ArrowDown) 
-//         {
-//             *logo = Direction::Down;
-//         }
-//         else if keys.pressed(KeyCode::ArrowLeft) 
-//         {
-//             *logo = Direction::Left;
-//         }
-//         else if keys.pressed(KeyCode::ArrowRight) 
-//         {
-//             *logo = Direction::Right;
-//         }
-//     }
-// }
 
 fn key_code_to_string(key_code: KeyCode) -> String
 {
