@@ -1,9 +1,5 @@
 [build]
-target = "index.html"
+public_url = "./"
 
-[watch]
-include = ["assets"]
-
-[output]
-dir = "dist"
-
+[serve]
+port = 8080
