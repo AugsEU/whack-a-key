@@ -1259,6 +1259,7 @@ dependencies = [
  "bevy",
  "bevy_framepace",
  "rand",
+ "wasm-bindgen",
 ]
 
 [[package]]
