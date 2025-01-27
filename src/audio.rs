@@ -19,5 +19,5 @@ fn start_audio(audio_assets: Res<AudioAssets>, audio: Res<Audio>)
 {
     let _ = audio.play(audio_assets.monty_moles.clone())
                         .looped()
-                        .with_volume(0.6);
+                        .with_volume(0.2);
 }

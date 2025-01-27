@@ -437,15 +437,7 @@ fn update_moles(time: Res<Time>,
                 mole.status = MoleState::Bonked;
                 manager.moles_hit += 1;
 
-                // audio.play(audio_assets.)
-                // commands.spawn((
-                //     AudioPlayer(manager.bonk_handle.clone()),
-                //     PlaybackSettings {
-                //         mode: bevy::audio::PlaybackMode::Once,
-                //         volume: bevy::audio::Volume::new(0.2),
-                //         ..default()
-                //     }
-                // ));
+                audio.play(audio_assets.bonk.clone()).with_volume(0.2);
             }
             else if mole.status == MoleState::Hidden
             {
@@ -455,14 +447,7 @@ fn update_moles(time: Res<Time>,
 
                 mole.reset_mole_time();
 
-                // commands.spawn((
-                //     AudioPlayer(manager.nope_handle.clone()),
-                //     PlaybackSettings {
-                //         mode: bevy::audio::PlaybackMode::Once,
-                //         volume: bevy::audio::Volume::new(0.2),
-                //         ..default()
-                //     }
-                // ));
+                audio.play(audio_assets.nope.clone()).with_volume(0.1);
             }
         }
         else if mole.timer.just_finished()
