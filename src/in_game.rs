@@ -113,14 +113,24 @@ fn update_gamemanager(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>,
 #[derive(Component)]
 struct Healthbar;
 
+#[derive(Component)]
+struct Logo;
+
+#[derive(Component)]
+struct Heart;
+
 fn update_healthbar(game_manager: Res<GameManager>,
             mut healthbar: Query<(&mut Healthbar, &mut Children)>, 
-            mut hb_sprites: Query<(&mut Sprite, &mut Visibility)>,
+            mut hb_sprites: Query<(&mut Sprite, &mut Visibility), (With<Heart>, Without<Logo>)>,
+            mut hb_logos: Query<(&mut Sprite, &mut Visibility), (With<Logo>, Without<Heart>)>,
             mut hb_title: Query<&mut Text2d>)
 {
+    let mut heart_idx = 0;
+    
+
     for (_, children) in &mut healthbar
     {
-        for (i, child) in children.iter().enumerate()
+        for child in children.iter()
         {
             if let Ok(hb_sprite) = hb_sprites.get_mut(*child)
             {
@@ -132,28 +142,42 @@ fn update_healthbar(game_manager: Res<GameManager>,
                 else if let Some(atlas) = &mut sprite.texture_atlas
                 {
                     *vis = Visibility::Visible;
-                    let alive : bool = (i as i32) <= game_manager.get_curr_health();
+                    let alive : bool = heart_idx < game_manager.get_curr_health();
                     atlas.index = if alive { 0 } else { 1 };
                 }
                 else
                 {
                     panic!();
                 }
+
+                heart_idx += 1;
+            }
+            else if let Ok(logo) = hb_logos.get_mut(*child)
+            {
+                let (_sprite, mut vis) = logo;
+                if game_manager.curr_state == RoundState::Round || game_manager.curr_state == RoundState::GameOver
+                {
+                    *vis = Visibility::Hidden;
+                }
+                else
+                {
+                    *vis = Visibility::Visible;
+                }
             }
             else if let Ok(mut hb_title) = hb_title.get_mut(*child)
             {
                 if game_manager.curr_state == RoundState::Begin
                 {
-                    *hb_title = Text2d::new("WHACK-A-KEY\nPress [Enter]");
+                    *hb_title = Text2d::new("Press [Enter]");
                 }
                 else if game_manager.curr_state == RoundState::Round
                 {
-                    let score_str = format!("Score: {}\n\n ", game_manager.moles_hit);
+                    let score_str = format!("Score: {}\n\n\n\n\n\n ", game_manager.moles_hit);
                     *hb_title = Text2d::new(score_str);
                 }
                 else if game_manager.curr_state == RoundState::GameOver
                 {
-                    let score_str = format!("GAME OVER\n Score: {}", game_manager.moles_hit);
+                    let score_str = format!("GAME OVER\n Score: {}\n\n\n\n ", game_manager.moles_hit);
                     *hb_title = Text2d::new(score_str);
                 }
             }
@@ -536,29 +560,34 @@ fn setup_in_game(mut commands: Commands,
     let hearts_layout = TextureAtlasLayout::from_grid(UVec2::new(22, 16), 2, 1, Some(UVec2::new(1, 1)), None);
     let hearts_atlas_layout = texture_atlas_layouts.add(hearts_layout);
 
+    let mut logo_pos = Transform::from_xyz(0.0, 0.0, 2.0);
+    logo_pos.scale = Vec3::splat(2.0);
+
     let hb = commands.spawn((Healthbar, Transform::from_xyz(0.0, 260.0, 1.0)))
-        .with_child((
-            Text2d::new("WHACK-A-KEY"),
-            text_font
-                .clone()
-                .with_font_smoothing(FontSmoothing::None),
-                Transform::from_xyz(0.0, 0.0, 1.0)))
+        .with_child((Text2d::new("Press [ENTER]]"),
+                            text_font.clone()
+                                    .with_font_smoothing(FontSmoothing::None),
+                            Transform::from_xyz(0.0, -170.0, 1.0)))
+
+        .with_child((Sprite::from_image(textures.logo.clone()),
+                            logo_pos,
+                            Visibility::Visible,
+                            Logo))
         .id();
 
     for i in 0..MAX_MISTAKES
     {
         let mut transform = Transform::from_xyz(i as f32 * 50.0 - 225.0, 0.0, 1.0);
         transform.scale = Vec3::splat(2.0);
-        let child = commands.spawn((
-            transform,
-            Sprite::from_atlas_image(
-                hearts_tex.clone(),
-            TextureAtlas {
-                layout: hearts_atlas_layout.clone(),
-                index: 0,
-                }),
-            Visibility::Visible,
-            )).id();
+        let child = commands.spawn((transform,
+                                                    Sprite::from_atlas_image(hearts_tex.clone(),
+                                                                            TextureAtlas 
+                                                                            {
+                                                                                layout: hearts_atlas_layout.clone(),
+                                                                                index: 0,
+                                                                            }),
+                                                    Visibility::Visible,
+                                                    Heart)).id();
 
         commands.entity(hb).add_child(child);
     }
