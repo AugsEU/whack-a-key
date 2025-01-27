@@ -14,9 +14,10 @@ impl Plugin for LoadingPlugin
     {
         app.add_loading_state(
             LoadingState::new(GameState::Loading)
-                .continue_to_state(GameState::Menu)
+                .continue_to_state(GameState::Playing)
                 .load_collection::<AudioAssets>()
-                .load_collection::<TextureAssets>(),
+                .load_collection::<TextureAssets>()
+                .load_collection::<FontAssets>(),
         );
     }
 }
@@ -27,8 +28,14 @@ impl Plugin for LoadingPlugin
 #[derive(AssetCollection, Resource)]
 pub struct AudioAssets
 {
-    #[asset(path = "audio/flying.ogg")]
-    pub flying: Handle<AudioSource>,
+    #[asset(path = "audio/monty_moles.ogg")]
+    pub monty_moles: Handle<AudioSource>,
+
+    //#[asset(path = "audio/bonk.wav")]
+    //pub bonk: Handle<AudioSource>,
+
+    //#[asset(path = "audio/nope.wav")]
+    //pub nope: Handle<AudioSource>,
 }
 
 #[derive(AssetCollection, Resource)]
@@ -46,3 +53,12 @@ pub struct TextureAssets
     #[asset(path = "textures/mole.png")]
     pub mole: Handle<Image>,
 }
+
+
+#[derive(AssetCollection, Resource)]
+pub struct FontAssets
+{
+    #[asset(path = "fonts/Pixica-Bold.ttf")]
+    pub pixica: Handle<Font>,
+}
+
