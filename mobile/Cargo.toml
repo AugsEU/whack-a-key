@@ -9,7 +9,7 @@ name = "mobile"
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-bevy_game = { path = ".." } # ToDo
+whack_a_key = { path = ".." }
 bevy = { version = "0.15", default-features = false, features = ["android-native-activity"] }
 
 # See https://github.com/bevyengine/bevy/pull/12052

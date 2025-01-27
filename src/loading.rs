@@ -31,11 +31,11 @@ pub struct AudioAssets
     #[asset(path = "audio/monty_moles.ogg")]
     pub monty_moles: Handle<AudioSource>,
 
-    //#[asset(path = "audio/bonk.wav")]
-    //pub bonk: Handle<AudioSource>,
+    #[asset(path = "audio/bonk.wav")]
+    pub bonk: Handle<AudioSource>,
 
-    //#[asset(path = "audio/nope.wav")]
-    //pub nope: Handle<AudioSource>,
+    #[asset(path = "audio/nope.wav")]
+    pub nope: Handle<AudioSource>,
 }
 
 #[derive(AssetCollection, Resource)]

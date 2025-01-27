@@ -1,6 +1,7 @@
-use crate::loading::{FontAssets, TextureAssets};
+use crate::loading::{AudioAssets, FontAssets, TextureAssets};
 use crate::GameState;
 use bevy::prelude::*;
+use bevy_kira_audio::{Audio, AudioControl};
 use std::cmp;
 use std::{collections::HashMap, time::Duration};
 use bevy::text::FontSmoothing;
@@ -402,6 +403,8 @@ impl Mole
 }
 
 fn update_moles(time: Res<Time>, 
+                audio_assets: Res<AudioAssets>, 
+                audio: Res<Audio>,
                 keys: Res<ButtonInput<KeyCode>>,
                 mut manager: ResMut<GameManager>,
                 mut shaker: ResMut<ScreenShaker>,
@@ -434,6 +437,7 @@ fn update_moles(time: Res<Time>,
                 mole.status = MoleState::Bonked;
                 manager.moles_hit += 1;
 
+                // audio.play(audio_assets.)
                 // commands.spawn((
                 //     AudioPlayer(manager.bonk_handle.clone()),
                 //     PlaybackSettings {
